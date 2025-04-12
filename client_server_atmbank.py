@@ -1,3 +1,12 @@
+class RNG:
+    def __init__(self, seed):
+        self.state = seed
+    
+    def getRNG(self):
+        x = self.state
+        self.state += 1
+        return x
+    
 
 
 
