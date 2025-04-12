@@ -135,7 +135,24 @@ class SimplifiedDES:
     def __init__(self, key):
         self.key = key
         self.subkeys = self.subkey_gen()
-
+        
+    def bytes_bits(self, data):
+        bits = []
+        for bit in data:
+            for i in range(7, -1, -1):
+                bits.append((bit >> i) & i)
+        return bits
+    
+    def bits_bytes(self, data):
+        bits = []
+        for i in range(0, len(data), 8):
+            bit = 0
+            for j in range(8):
+                if i + j < len(data):
+                    bit |= bits[i+j] << (7 - j)
+            bits.append(bit)
+        return bytes(bits)
+        
     def permute(self, input_bits, permutation_table):
         return [input_bits[i-1] for i in permutation_table]
 
@@ -143,23 +160,25 @@ class SimplifiedDES:
         return bits[n:] + bits[:n] # circular
 
     def subkey_gen(self):
-        key = self.permute(self.key, self.P10)
+        # how you represent l or r
+        shift_schema = [1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1]
         
-        # Split into two halves
-        left = key[:5]
-        right = key[5:]
+        key_bits = self.bytes_bits(self.key)
+        perm_key = [key_bits[i-1] for i in self.PC1]
         
-        # First round - shift both halves left by 1
-        left = self.shift_left(left, 1)
-        right = self.shift_left(right, 1)
-        key1 = self.permute(left + right, self.P8)
+        # 56 / 2 = 28
+        # l = first half, r = second half
+        l = perm_key[:28]
+        r = perm_key[28:]
         
-        # Second round - shift both halves left by 2
-        left = self.shift_left(left, 2)
-        right = self.shift_left(right, 2)
-        key2 = self.permute(left + right, self.P8)
-        
-        return [key1, key2]
+        subkeys = []
+        for shift in shift_schema:
+            l = l[shift:] + l[:shift]
+            r = r[shift:] + r[:shift]
+            
+            lr = l + r
+            subkey = [lr[i-1] for i in self.PC2]
+            subkeys.append(subkey)
 
     def feistel(self, right_half, subkey):
         # Expansion: expand 4 bits to 8 bits
