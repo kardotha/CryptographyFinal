@@ -1,3 +1,4 @@
+#ECC
 #https://crypto.stackexchange.com/questions/11744/scalar-multiplication-on-elliptic-curves
 # Define the elliptic curve parameters
 q = 257  # Field size

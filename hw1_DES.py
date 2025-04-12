@@ -1,3 +1,4 @@
+#DES
 class SimplifiedDES:
     # Initial permutation tables
     P10 = [3, 5, 2, 7, 4, 10, 1, 9, 8, 6]
@@ -31,9 +32,6 @@ class SimplifiedDES:
 
     def shift_left(self, bits, n):
         return bits[n:] + bits[:n] # circular
-    
-    def xor(self, a, b):
-        return [x ^ y for x, y in zip(a, b)]
 
     def subkey_gen(self):
         key = self.permute(self.key, self.P10)
@@ -120,6 +118,46 @@ class SimplifiedDES:
         state = state[4:] + state[:4]
         return self.permute(state, self.IP_INV)
     
+def encrypt_string(plaintext_string, key):
+    #https://www.geeksforgeeks.org/python-program-to-convert-ascii-to-binary/
+    ciphertext = []
+    for char in plaintext_string:
+        des = SimplifiedDES(key)
+        # turn char into a binary array
+        binary_str = bin(ord(char))[2:].zfill(8)
+        binary_array = [int(bit) for bit in binary_str]
+        
+        ciphertext.append(
+            des.encrypt_block(binary_array)
+        )
+    
+    cipher_strings = []
+    for e in ciphertext:
+        string_array = [str(bit) for bit in e]
+        cipher_strings.append("".join(string_array))
+    
+    return " ".join(cipher_strings)
+
+def decrypt_string(ciphertext_string, key):
+    cipher_blocks = ciphertext_string.split()
+    plaintext = []
+    
+    for block in cipher_blocks:
+        des = SimplifiedDES(key)
+        # Convert the binary string back to array of integers
+        binary_array = [int(bit) for bit in block]
+        
+        decrypted_block = des.decrypt_block(binary_array)
+        
+        # Convert the decrypted binary array back to a character
+        binary_str = ''.join(str(bit) for bit in decrypted_block)
+        char = chr(int(binary_str, 2))
+        
+        plaintext.append(char)
+    
+    # Join all characters back into the original string
+    return ''.join(plaintext)
+    
 def test_simplified_des():
     key = [1, 1, 0, 0, 0, 1, 1, 1, 1, 0]
     plaintext = [0, 0, 1, 0, 1, 0, 0, 0]
@@ -134,55 +172,20 @@ def test_simplified_des():
     print(f"Decrypted:  {decrypted}")
     
     assert decrypted == plaintext, "Decryption failed!"
+    
+def test_combined_block_HW():
+    key = [1, 1, 0, 0, 0, 1, 1, 1, 1, 0]
+    plaintext = "crypto"
+    
+    ciphertext = encrypt_string(plaintext, key)
+    print(f"Plaintext: {plaintext}")
+    print(f"Ciphertext: {ciphertext}")
+    
+    decrypted = decrypt_string(ciphertext, key)
+    print(f"Decrypted: {decrypted}")
+    
+    assert decrypted == plaintext, "Decryption failed!"
 
-def generate_mac(message, key):
-    sdes = SimplifiedDES(key)
-    iv = [0] * 8  # IV=0
-    previous = iv
-    # Convert to 8-bit ASCII
-    blocks = []
-    for char in message:
-        bits = [int(b) for b in format(ord(char), '08b')]
-        blocks.append(bits)
-    for block in blocks:
-        xored = sdes.xor(block, previous)
-        encrypted = sdes.encrypt_block(xored)
-        previous = encrypted
-    return previous
-
-def birthday_attack(original_mac_, target_message, key, max_attempts=256):
-    _ = SimplifiedDES(key)
-    for i in range(max_attempts):
-        # add random
-        fraudulent_msg_ = target_message + chr(i % 256)
-        # MAC for fraudulent message
-        fraudulent_mac_ = generate_mac(fraudulent_msg_, key)
-        if fraudulent_mac_ == original_mac_:
-            print(f"Collision found after {i+1} attempts!")
-            return fraudulent_msg
-    return None
-
-# Shared secret key (10 bits)
-KEY = [1, 0, 1, 0, 0, 0, 0, 0, 1, 0]  # Binary: 1010000010
-
-# Original legitimate message
-ORIGINAL_MSG = "deposit 1000 dollars"
-print(f"Original message: {ORIGINAL_MSG}")
-
-# Generate original MAC
-original_mac = generate_mac(ORIGINAL_MSG, KEY)
-print(f"Original MAC: {original_mac}")
-
-# Target fraudulent message
-TARGET_MSG = "withdraw 1000 dollars"
-print("\nStarting birthday attack...")
-
-# Perform attack
-fraudulent_msg = birthday_attack(original_mac, TARGET_MSG, KEY)
-
-if fraudulent_msg:
-    print("\nSuccessful attack!")
-    print(f"Fraudulent message: {fraudulent_msg}")
-    print(f"Valid MAC: {generate_mac(fraudulent_msg, KEY)}")
-else:
-    print("Attack failed - no collision found")
+if __name__ == "__main__":
+    test_simplified_des()
+    test_combined_block_HW()

@@ -1,3 +1,4 @@
+#pollard's rho factoring algo and pollard's kangaroo algo for solving modular exponeitation problems
 def pollards_rho(n_):
     # Greatest Common Divisor function
     # https://stackoverflow.com/questions/11175131/code-for-greatest-common-divisor-in-python
