@@ -242,3 +242,32 @@ class SimplifiedDES:
         rl = right + left
         p = [rl[i-1] for i in self.IP_INV]
         return self.bits_bytes(p)
+    
+    def xor(self, a, b):
+        return [x^y for x, y in zip(a, b)]
+    
+    # mac stuff goes here ig?
+    # wtf how do i impl this
+    # https://gist.github.com/TomCorwine/88090a64dc62c2610ce6d55d832766b0
+    # https://www.naukri.com/code360/library/cbc-mac-in-cryptography
+    def get_mac(self, payload):
+        iv = [0] * 64
+        
+        before = iv
+        message = message.encode()
+        
+        len_pad = 8 - (len(message) % 8)
+        message += bytes([len_pad] * len_pad)
+        blocks = [message[payload[i:i+8]] for i in range(0, len(message), 8)]
+        
+        for block in blocks:
+            bits = []
+            for bit in block:
+                bits.extend([int(b) for b in f"{bit:08b}"])
+                
+            xor = self.xor(bits, before)
+            enc = self.encrypt_block(xor)
+            before = enc
+            
+        mac = bytes(int(''.join(map(str, before[i:i+8])), 2) for i in range(0, 64, 8))
+        return mac

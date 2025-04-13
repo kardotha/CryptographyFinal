@@ -1,6 +1,8 @@
 #ECC
 #https://en.wikipedia.org/wiki/Elliptic-curve_cryptography
 #https://martin.kleppmann.com/papers/curve25519.pdf
+    # use bitcoin elliptic curve
+    # https://security.stackexchange.com/questions/78621/which-elliptic-curve-should-i-use
 class SimplifiedECC:
     def __init__(self, a, b, p, g, n):
         #y² ≡ x³ + ax + b (mod p)
