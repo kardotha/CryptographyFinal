@@ -13,6 +13,20 @@ class RNG:
 		self.state += 1
 		return x
 
+class ECC:
+	def __init__(self, seed):
+		self.state = seed
+	def getKeys(self):
+		return 1, 2
+	
+class DES:
+	def __init__(self):
+		self.val = 0
+		
+class HMAC:
+	def __init__(self):
+		self.val = 0
+
 class ATMClient:
 	def __init__(self, host='localhost', port=12345):
 		self.host = host
@@ -21,8 +35,30 @@ class ATMClient:
 		self.connected = False
 		self.authenticated = False
 		self.account_num = None
+
+		self.rng = RNG.getRNG()
+
+		self.private_key, self.public_key = ECC.getKeys(self.rng)
 	 
 	def connect(self):
+		#with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+			# Step 1: Send client's public key to server
+			#s.sendall(repr(self.public_key).encode('utf-8'))
+					
+			# Step 2: Receive encrypted session key
+			#encrypted_session_key = eval(s.recv(1024).decode('utf-8'))
+					
+			# Step 3: Decrypt session key with client's private key
+			#session_key_bytes = ecc.decrypt(self.private_key, encrypted_session_key)
+			#session_key = int.from_bytes(session_key_bytes, 'big')
+					
+			# Initialize DES with session key
+			#self.des = DES(session_key_bytes[:8])  # Use first 8 bytes as DES key
+					
+			# Initialize HMAC with session key
+			#self.hmac = HMAC(session_key_bytes)
+					
+		# Start interactive session
 		try:
 			self.socket.connect((self.host, self.port))
 			self.connected = True
@@ -142,6 +178,29 @@ class ATMClient:
 				break
 			else:
 				print("Invalid choice. Please try again.")
+
+			#instead of going to functions, selection should change request var
+			#Generate MAC for request
+			#mac = self.HMAC.generate(request.encode('utf-8'))
+			#full_request = request.encode('utf-8') + mac
+			
+			#Encrypt and send request
+			#encrypted_request = self.DES.encrypt(full_request)
+			#sock.sendall(encrypted_request)
+			
+			#Receive and process response
+			#encrypted_response = sock.recv(1024)
+			#decrypted_response = self.DES.decrypt(encrypted_response)
+			
+			#Split response and MAC
+			#response = decrypted_response[:-32]  # Assuming SHA-256 (32 bytes)
+			#received_mac = decrypted_response[-32:]
+			
+			#Verify MAC
+			#computed_mac = self.HMAC.generate(response)
+			#if received_mac != computed_mac:
+			#	print("MAC verification failed for response!")
+			#	continue
 	 
 	def run(self):
 		if not self.connect():
@@ -161,15 +220,51 @@ class BankServer:
 		self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 		self.lock = threading.Lock() #prevent DOS
 		self.running = False #server control loop flag
+
+		self.rng = RNG.getRNG()
+
+		self.private_key, self.public_key = ECC.getKeys()
 		  
 	def handle_client(self, client_socket, address):
 		print(f"Connection established with {address}")
+		# Step 1: Receive client's public key
+		#ATM sends request, need to have an initial send of pub key
+		client_pub_key_data = client_socket.recv(1024)
+		client_pub_key = ECC.Point._make(eval(client_pub_key_data))
+		
+		# Step 2: Generate session key
+		session_key = self.rng.randint(1, 2**128-1)
+		session_key_bytes = session_key.to_bytes(16, 'big')
+		
+		# Step 3: Encrypt session key with client's public key
+		encrypted_session_key = ECC.encrypt(client_pub_key, session_key_bytes, self.rng)
+		client_socket.sendall(repr(encrypted_session_key).encode('utf-8'))
+		
+		# Initialize DES with session key
+		des = DES(session_key_bytes[:8])  # Use first 8 bytes as DES key
+		
+		# Initialize HMAC with session key
+		hmac = HMAC(session_key_bytes)
+
 		try:
 			while True:
+				#encrypted_request = client_socket.recv(1024).decode('utf-8')
 				request = client_socket.recv(1024).decode('utf-8')
 				if not request:
 					break
-					 
+				#decrypted_request = DES.decrypt(encrypted_request)
+				#request = decrypted_request[:-32] orwhatever this ends up being
+				#request_mac = descrypted_request[:32]
+				#computed_mac = HMAC.generate(request_msg)
+				#if received_mac != computed_mac:
+               #print("MAC verification failed!")
+               #client_socket.sendall(DES.encrypt(b"ERROR: MAC verification failed"))
+               #continue
+				#response = self.process_request(msg)
+				#response_mac = HMAC.generate(response)
+            #full_response = response + response_mac
+				#encrypted_response = DES.encrypt(full_response)
+            #client_socket.sendall(encrypted_response)
 				try:
 					data = json.loads(request)
 					response = self.process_request(data)
