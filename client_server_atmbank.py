@@ -382,6 +382,13 @@ class HMAC:
    def __init__(self):
       self.val = 0
 
+
+
+
+
+
+
+
 class ATMClient:
    def __init__(self, host='localhost', port=12345):
       self.host = host
@@ -394,25 +401,27 @@ class ATMClient:
       self.rng = RNG.getRNG()
 
       self.private_key, self.public_key = SimplifiedECC.getKeys(self.rng)
+
+      #self.DES = SimplifiedDES(self.private_key)
     
    def connect(self):
-      #with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-         #Step 1: Send client's public key to server
-         #s.sendall(repr(self.public_key).encode('utf-8'))
-               
-         #Step 2: Receive encrypted session key
-         #encrypted_session_key = eval(s.recv(1024).decode('utf-8'))
-               
-         #Step 3: Decrypt session key with client's private key
-         #session_key_bytes = SimplifiedECC.decrypt(self.private_key, encrypted_session_key)
-         #session_key = int.from_bytes(session_key_bytes, 'big')
-               
-         #Initialize DES with session key
-         #self.des = SimplifiedDES(session_key_bytes[:8])  #Use first 8 bytes as DES key
-               
-         #Initialize HMAC with session key
-         #self.hmac = HMAC(session_key_bytes)
-               
+   
+      #Step 1: Send client's public key to server
+      self.socket.sendall(repr(self.public_key).encode('utf-8'))
+            
+      #Step 2: Receive encrypted session key
+      encrypted_session_key = eval(self.socket.recv(1024).decode('utf-8'))
+            
+      #Step 3: Decrypt session key with client's private key
+      session_key_bytes = SimplifiedECC.decrypt(self.private_key, encrypted_session_key)
+      #session_key = int.from_bytes(session_key_bytes, 'big')
+            
+      #Initialize DES with session key
+      self.des = SimplifiedDES(session_key_bytes[:8])  #Use first 8 bytes as DES key
+            
+      #Initialize HMAC with session key
+      self.hmac = HMAC(session_key_bytes)
+            
       #Start interactive session
       try:
          self.socket.connect((self.host, self.port))
@@ -436,6 +445,7 @@ class ATMClient:
       if not self.connected:
          print("Not connected to server")
          return False
+      
       #defaults, can be changed if future implementation needed
       self.account_num = "123456"
       self.authenticated = True
@@ -446,16 +456,10 @@ class ATMClient:
       if not self.authenticated:
          print("Please authenticate first")
          return
-        
-      response = self.send_request({
+      return {
          "action": "check_balance",
          "account_num": self.account_num
-      })
-        
-      if response.get("status") == "success":
-         print(f"Your current balance is: ${response['balance']}")
-      else:
-         print(f"Error: {response.get('message', 'Unknown error')}")
+      }
     
    def deposit(self):
       #shouldnt ever throw this error
@@ -471,19 +475,12 @@ class ATMClient:
       except ValueError:
          print("Invalid amount. Minimum denomination is one dollar.")
          return
-        
-
-      response = self.send_request({
+      return {
          "action": "deposit",
          "account_num": self.account_num,
          "amount": amount
-      })
-        
-      if response.get("status") == "success":
-         print(f"Deposit successful. New balance: ${response['balance']}")
-      else:
-         print(f"Error: {response.get('message', 'Unknown error')}")
-    
+      }
+
    def withdraw(self):
       #shouldnt ever throw this error
       if not self.authenticated:
@@ -499,20 +496,14 @@ class ATMClient:
          print("Invalid amount. Minimum denomination is one dollar.")
          return
         
-
-      response = self.send_request({
+      return {
          "action": "withdraw",
          "account_num": self.account_num,
          "amount": amount
-      })
-        
-      if response.get("status") == "success":
-         print(f"Withdrawal successful. New balance: ${response['balance']}")
-      else:
-         print(f"Error: {response.get('message', 'Unknown error')}")
+      }
     
    def show_menu(self):
-
+      validRequest = True
       while True: #only exit on user exit
          print("\nATM Menu:\n" \
          "1. Check Balance\n" \
@@ -521,41 +512,56 @@ class ATMClient:
          "4. Exit")
             
          choice = input("Enter your choice (1-4): ")
-            
+         
          if choice == "1":
-            self.check_balance()
+            request = self.check_balance()
+            validRequest = True
          elif choice == "2":
-            self.deposit()
+            request = self.deposit()
+            validRequest = True
          elif choice == "3":
-            self.withdraw()
+            request = self.withdraw()
+            validRequest = True
          elif choice == "4":
             print("Thank you for using our ATM. Goodbye!")
             break
          else:
             print("Invalid choice. Please try again.")
+            validRequest = False
+         
+         if(validRequest):
+            #Generate MAC for request
+            mac = self.hmac.generate(request.encode('utf-8'))
+            full_request = request.encode('utf-8') + mac
+            
+            #Encrypt and send request
+            encrypted_request = self.des.encrypt(full_request)
+            self.socket.sendall(encrypted_request)
+            
+            #Receive and process response
+            encrypted_response = self.socket.recv(1024)
+            decrypted_response = self.des.decrypt(encrypted_response)
+            
+            #Split response and MAC
+            response = decrypted_response[:-32]  #Assuming SHA-256 (32 bytes)
+            received_mac = decrypted_response[-32:]
+            
+            #Verify MAC
+            computed_mac = self.hmac.generate(response)
+            if received_mac != computed_mac:
+               print("MAC verification failed for response!")
+               continue
 
-         #instead of going to functions, selection should change request var
-         #Generate MAC for request
-         #mac = self.HMAC.generate(request.encode('utf-8'))
-         #full_request = request.encode('utf-8') + mac
-         
-         #Encrypt and send request
-         #encrypted_request = self.DES.encrypt(full_request)
-         #sock.sendall(encrypted_request)
-         
-         #Receive and process response
-         #encrypted_response = sock.recv(1024)
-         #decrypted_response = self.DES.decrypt(encrypted_response)
-         
-         #Split response and MAC
-         #response = decrypted_response[:-32]  #Assuming SHA-256 (32 bytes)
-         #received_mac = decrypted_response[-32:]
-         
-         #Verify MAC
-         #computed_mac = self.HMAC.generate(response)
-         #if received_mac != computed_mac:
-         #	print("MAC verification failed for response!")
-         #	continue
+            if response.get("status") == "success":
+               if choice == "1":
+                  print(f"Your current balance is: ${response['balance']}")
+               elif choice == "2":
+                  print(f"Deposit successful. New balance: ${response['balance']}")
+               elif choice == "3":
+                  print(f"Withdrawal successful. New balance: ${response['balance']}")
+            else:
+               print(f"Error: {response.get('message', 'Unknown error')}")
+      
     
    def run(self):
       if not self.connect():
@@ -565,6 +571,12 @@ class ATMClient:
          self.show_menu()
         
       self.socket.close()
+
+
+
+
+
+
 
 class BankServer:
    def __init__(self, host='localhost', port=12345):
@@ -579,8 +591,10 @@ class BankServer:
       self.rng = RNG.getRNG()
 
       self.private_key, self.public_key = SimplifiedECC.getKeys()
+
         
    def handle_client(self, client_socket, address):
+
       print(f"Connection established with {address}")
       #Step 1: Receive client's public key
       #ATM sends request, need to have an initial send of pub key
@@ -603,30 +617,31 @@ class BankServer:
 
       try:
          while True:
-            #encrypted_request = client_socket.recv(1024).decode('utf-8')
-            request = client_socket.recv(1024).decode('utf-8')
-            if not request:
-               break
-            #decrypted_request = DES.decrypt(encrypted_request)
-            #request = decrypted_request[:-32] orwhatever this ends up being
-            #request_mac = descrypted_request[:32]
-            #computed_mac = HMAC.generate(request_msg)
-            #if received_mac != computed_mac:
-               #print("MAC verification failed!")
-               #client_socket.sendall(DES.encrypt(b"ERROR: MAC verification failed"))
-               #continue
-            #response = self.process_request(msg)
-            #response_mac = HMAC.generate(response)
-            #full_response = response + response_mac
-            #encrypted_response = DES.encrypt(full_response)
-            #client_socket.sendall(encrypted_response)
+            encrypted_request = client_socket.recv(1024).decode('utf-8')
+            #request = client_socket.recv(1024).decode('utf-8')
+            #if not request:
+            #   break
+            decrypted_request = SimplifiedDES.decrypt(encrypted_request)
+            request = decrypted_request[:-32] #32 might be incorrect
+            request_mac = decrypted_request[:32]
+            computed_mac = HMAC.generate(request) #might need to be request_mac instead of request
+            if request_mac != computed_mac:
+               print("MAC verification failed!")
+               client_socket.sendall(DES.encrypt(b"ERROR: MAC verification failed"))
+               continue
+            #response = self.process_request(request)
             try:
                data = json.loads(request)
                response = self.process_request(data)
             except json.JSONDecodeError:
                response = {"status": "error", "message": "Invalid request format"}
-                
-            client_socket.send(json.dumps(response).encode('utf-8'))
+
+            response_mac = HMAC.generate(response)
+            full_response = response + response_mac
+            encrypted_response = SimplifiedDES.encrypt(full_response)
+            client_socket.sendall(encrypted_response)
+
+            #client_socket.send(json.dumps(response).encode('utf-8'))
       except Exception as e:
          print(f"Error with client {address}: {e}")
       finally:
@@ -689,7 +704,7 @@ class BankServer:
          while self.running:
                try:
                   #select checks if the socket is readable (has incoming connections)
-                  readable, temp1, temp2 = select.select([self.server_socket], [], [], 1)
+                  readable, _, _ = select.select([self.server_socket], [], [], 1)
                   if readable: #act as normal
                      client_socket, address = self.server_socket.accept()
                      client_thread = threading.Thread(
@@ -711,11 +726,10 @@ class BankServer:
 if __name__ == "__main__":
    import sys
    if len(sys.argv) > 1 and sys.argv[1] == "server":
+      #if running server command, host bank
       bank_server = BankServer()
       bank_server.start()
    else:
-      #run atm client
-      #client = atm()
-      #client.connect()
+      #otherwise, host atm
       atm_socket = ATMClient()
       atm_socket.run()
