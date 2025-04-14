@@ -4,18 +4,22 @@ import threading
 import select
 import time
 
+    
+p = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
+a, b = 0, 7
+g = (0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798,
+           0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8)
+n = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+
 class RNG:
     def __init__(self, seed):
-        self.state = seed
-    
+        self.state = seed if seed is not None else self.entropy()
+        self.counter = 0
+        
     def getRNG(self):
         x = self.state
         self.state += 1
         return x
-  
-    def __init__(self, seed):
-        self.state = seed if seed is not None else self.entropy()
-        self.counter = 0
     
     def entropy(self):
         return self.hash(str(self.hash(str(id(self)) + str(time.time()))))
@@ -63,7 +67,7 @@ class RNG:
 #https://martin.kleppmann.com/papers/curve25519.pdf
     #use bitcoin elliptic curve
     #https://security.stackexchange.com/questions/78621/which-elliptic-curve-should-i-use
-class SimplifiedECC:
+class ECC:
     def __init__(self, a, b, p, g, n):
         #y² ≡ x³ + ax + b (mod p)
         #g: base point (x, y) tuple
@@ -150,7 +154,7 @@ class SimplifiedECC:
         return point[0].to_bytes((point[0].bit_length() + 7) // 8, 'big')
    
 #DES
-class SimplifiedDES:
+class DES:
    #https://en.wikipedia.org/wiki/DES_supplementary_material
    #https://ziaullahrajpoot.medium.com/data-encryption-standard-des-dc8610aafdb3
    #Initial and final permutation for plaintext/ciphertext
@@ -331,6 +335,7 @@ class SimplifiedDES:
          lr = l + r
          subkey = [lr[i-1] for i in self.PC2]
          subkeys.append(subkey)
+      return subkeys
 
    def feistel(self, data, subkey):
       #https://en.wikipedia.org/wiki/Data_Encryption_Standard
@@ -401,38 +406,13 @@ class SimplifiedDES:
    #wtf how do i impl this
    #https://gist.github.com/TomCorwine/88090a64dc62c2610ce6d55d832766b0
    #https://www.naukri.com/code360/library/cbc-mac-in-cryptography
-   def get_mac(self, payload):
-      iv = [0] * 64
-        
-      before = iv
-      message = message.encode()
-        
-      len_pad = 8 - (len(message) % 8)
-      message += bytes([len_pad] * len_pad)
-      blocks = [message[payload[i:i+8]] for i in range(0, len(message), 8)]
-        
-      for block in blocks:
-         bits = []
-         for bit in block:
-            bits.extend([int(b) for b in f"{bit:08b}"])
-                
-         xor = self.xor(bits, before)
-         enc = self.encrypt_block(xor)
-         before = enc
-            
-      mac = bytes(int(''.join(map(str, before[i:i+8])), 2) for i in range(0, 64, 8))
-      return mac
-      
-class HMAC:
-   def __init__(self):
-      self.val = 0
-
-
-
-
-
-
-
+   def generate_mac(self, payload):
+    iv = bytes(8)  # 8 zero bytes for IV
+    mac = iv
+    for i in range(0, len(payload), 8):
+        block = payload[i:i+8].ljust(8, b'\0')  # Pad if needed
+        mac = bytes(a ^ b for a, b in zip(self.encrypt_block(block), mac))
+    return mac
 
 class ATMClient:
    def __init__(self, host='localhost', port=12345):
@@ -443,11 +423,12 @@ class ATMClient:
       self.authenticated = False
       self.account_num = None
 
-      self.rng = RNG.getRNG()
+      self.rng = RNG()
+      self.ECC = ECC(a, b, p, g, n)
 
-      self.private_key, self.public_key = SimplifiedECC.keypair(self.rng)
+      self.private_key, self.public_key = self.ECC.keypair(self.rng)
 
-      #self.DES = SimplifiedDES(self.private_key)
+      #self.DES = DES(self.private_key)
     
    def connect(self):
    
@@ -458,14 +439,14 @@ class ATMClient:
       encrypted_session_key = eval(self.socket.recv(1024).decode('utf-8'))
             
       #Step 3: Decrypt session key with client's private key
-      session_key_bytes = SimplifiedECC.decrypt(self.private_key, encrypted_session_key)
+      session_key_bytes = ECC.decrypt(self.private_key, encrypted_session_key)
       #session_key = int.from_bytes(session_key_bytes, 'big')
             
       #Initialize DES with session key
-      self.des = SimplifiedDES(session_key_bytes[:8])  #Use first 8 bytes as DES key
+      self.des = DES(session_key_bytes[:8])  #Use first 8 bytes as DES key
             
       #Initialize HMAC with session key
-      self.hmac = HMAC(session_key_bytes)
+      self.hmac = self.des.get_mac(session_key_bytes)
             
       #Start interactive session
       try:
@@ -576,23 +557,23 @@ class ATMClient:
          
          if(validRequest):
             #Generate MAC for request
-            mac = self.hmac.generate(request.encode('utf-8'))
+            mac = self.des.generate_mac(request.encode('utf-8'))
             full_request = request.encode('utf-8') + mac
             
             #Encrypt and send request
-            encrypted_request = self.des.encrypt(full_request)
+            encrypted_request = self.des.encrypt_block(full_request)
             self.socket.sendall(encrypted_request)
             
             #Receive and process response
             encrypted_response = self.socket.recv(1024)
-            decrypted_response = self.des.decrypt(encrypted_response)
+            decrypted_response = self.des.decrypt_block(encrypted_response)
             
             #Split response and MAC
-            response = decrypted_response[:-32]  #Assuming SHA-256 (32 bytes)
-            received_mac = decrypted_response[-32:]
+            response = decrypted_response[:-8]
+            received_mac = decrypted_response[-8:]
             
             #Verify MAC
-            computed_mac = self.hmac.generate(response)
+            computed_mac = self.des.generate_mac(response)
             if received_mac != computed_mac:
                print("MAC verification failed for response!")
                continue
@@ -617,12 +598,6 @@ class ATMClient:
         
       self.socket.close()
 
-
-
-
-
-
-
 class BankServer:
    def __init__(self, host='localhost', port=12345):
       self.host = host
@@ -632,10 +607,9 @@ class BankServer:
       self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
       self.lock = threading.Lock() #prevent DOS
       self.running = False #server control loop flag
+      self.rng = RNG()
 
-      self.rng = RNG.getRNG()
-
-      self.private_key, self.public_key = SimplifiedECC.keypair()
+      self.private_key, self.public_key = ECC.keypair(self.rng)
 
         
    def handle_client(self, client_socket, address):
@@ -644,21 +618,21 @@ class BankServer:
       #Step 1: Receive client's public key
       #ATM sends request, need to have an initial send of pub key
       client_pub_key_data = client_socket.recv(1024)
-      client_pub_key = SimplifiedECC(eval(client_pub_key_data))
+      client_pub_key = eval(client_pub_key_data)
       
       #Step 2: Generate session key
-      session_key = self.rng(1, 2**128-1)
+      session_key = self.rng.randint(1, 2**128-1)
       session_key_bytes = session_key.to_bytes(16, 'big')
       
       #Step 3: Encrypt session key with client's public key
-      encrypted_session_key = SimplifiedECC.encrypt(client_pub_key, session_key_bytes, self.rng)
+      encrypted_session_key = ECC.encrypt(client_pub_key, session_key_bytes, self.rng)
       client_socket.sendall(repr(encrypted_session_key).encode('utf-8'))
       
       #Initialize DES with session key
-      DES = SimplifiedDES(session_key_bytes[:8])  #Use first 8 bytes as DES key
+      des = DES(session_key_bytes[:8])  #Use first 8 bytes as DES key
       
       #Initialize HMAC with session key
-      hmac = HMAC(session_key_bytes)
+      hmac = des.generate_mac(session_key_bytes)
 
       try:
          while True:
@@ -666,13 +640,13 @@ class BankServer:
             #request = client_socket.recv(1024).decode('utf-8')
             #if not request:
             #   break
-            decrypted_request = SimplifiedDES.decrypt(encrypted_request)
-            request = decrypted_request[:-32] #32 might be incorrect
-            request_mac = decrypted_request[:32]
-            computed_mac = HMAC.generate(request) #might need to be request_mac instead of request
+            decrypted_request = des.decrypt_block(encrypted_request)
+            request = decrypted_request[:-8] #32 might be incorrect
+            request_mac = decrypted_request[:8]
+            computed_mac = des.generate_mac(request) #might need to be request_mac instead of request
             if request_mac != computed_mac:
                print("MAC verification failed!")
-               client_socket.sendall(DES.encrypt(b"ERROR: MAC verification failed"))
+               client_socket.sendall(des.encrypt_block(b"ERROR: MAC verification failed"))
                continue
             #response = self.process_request(request)
             try:
@@ -681,9 +655,9 @@ class BankServer:
             except json.JSONDecodeError:
                response = {"status": "error", "message": "Invalid request format"}
 
-            response_mac = HMAC.generate(response)
+            response_mac = des.generate_mac(response)
             full_response = response + response_mac
-            encrypted_response = SimplifiedDES.encrypt(full_response)
+            encrypted_response = des.encrypt_block(full_response)
             client_socket.sendall(encrypted_response)
 
             #client_socket.send(json.dumps(response).encode('utf-8'))
