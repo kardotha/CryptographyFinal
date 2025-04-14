@@ -2,17 +2,72 @@ import socket
 import json
 import threading
 import select
-
+import time
 
 class RNG:
-   def __init__(self, seed):
-      self.state = seed
+    def __init__(self, seed):
+        self.state = seed
     
-   def getRNG(self):
-      x = self.state
-      self.state += 1
-      return x
+    def getRNG(self):
+        x = self.state
+        self.state += 1
+        return x
+  
+    def __init__(self, seed):
+        self.state = seed if seed is not None else self.entropy()
+        self.counter = 0
+    
+    def entropy(self):
+        return self.hash(str(self.hash(str(id(self)) + str(time.time()))))
 
+    #https://www.cs.hmc.edu/~geoff/classes/hmc.cs070.200101/homework10/hashfuncs.html
+    #pjw hash
+    def hash(self, data):
+        if isinstance(data, str):
+            data = data.encode('utf-8')
+        x = 0
+        for byte in data:
+            x = (x << 4) + byte
+            y = x + 0xF0000000
+            if y != 0:
+                x ^= (y >> 24)
+                x ^= y
+        return x & 0xFFFFFFFF
+   
+    def update(self):
+        self.state = self.hash(str(self.hash(str(id(self)) + str(time.time()))))
+        self.counter += 1
+        
+    #num in blocks of 32
+    def get_bits(self, num):
+        output = 0
+        for i in range(num // 32):
+            self.update()
+            output = (output << 32) | self.state & 0xFFFFFFFF
+        return output
+    
+    def rand(self):
+        return self.get_bits(32) / (1 << 32)
+    
+    def randrange(self, a, b):
+        x = b - a + 1
+        y = x.bit_length()
+        
+        while True:
+            z = self.get_bits(y)
+            if z < x:
+                return a + z
+
+class ECC:
+    def __init__(self, seed):
+        self.state = seed
+    def getKeys(self):
+        return 1, 2
+    
+class DES:
+    def __init__(self):
+        self.val = 0
+        
 #ECC
 #https://en.wikipedia.org/wiki/Elliptic-curve_cryptography
 #https://martin.kleppmann.com/papers/curve25519.pdf
