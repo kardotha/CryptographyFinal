@@ -5,13 +5,14 @@ import select
 import time
 
 class RNG:
-   def __init__(self, seed):
-      self.state = seed
+    def __init__(self, seed):
+        self.state = seed
     
-   def getRNG(self):
-      x = self.state
-      self.state += 1
-      return x
+    def getRNG(self):
+        x = self.state
+        self.state += 1
+        return x
+  
     def __init__(self, seed):
         self.state = seed if seed is not None else self.entropy()
         self.counter = 0
