@@ -57,16 +57,6 @@ class RNG:
             z = self.get_bits(y)
             if z < x:
                 return a + z
-
-class ECC:
-    def __init__(self, seed):
-        self.state = seed
-    def getKeys(self):
-        return 1, 2
-    
-class DES:
-    def __init__(self):
-        self.val = 0
         
 #ECC
 #https://en.wikipedia.org/wiki/Elliptic-curve_cryptography
