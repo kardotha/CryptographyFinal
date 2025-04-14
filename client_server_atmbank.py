@@ -49,7 +49,7 @@ class RNG:
     def rand(self):
         return self.get_bits(32) / (1 << 32)
     
-    def randrange(self, a, b):
+    def randint(self, a, b):
         x = b - a + 1
         y = x.bit_length()
         
@@ -448,7 +448,7 @@ class ATMClient:
 
       self.rng = RNG.getRNG()
 
-      self.private_key, self.public_key = SimplifiedECC.getKeys(self.rng)
+      self.private_key, self.public_key = SimplifiedECC.keypair(self.rng)
     
    def connect(self):
       #with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -633,17 +633,17 @@ class BankServer:
 
       self.rng = RNG.getRNG()
 
-      self.private_key, self.public_key = SimplifiedECC.getKeys()
+      self.private_key, self.public_key = SimplifiedECC.keypair()
         
    def handle_client(self, client_socket, address):
       print(f"Connection established with {address}")
       #Step 1: Receive client's public key
       #ATM sends request, need to have an initial send of pub key
       client_pub_key_data = client_socket.recv(1024)
-      client_pub_key = SimplifiedECC.Point._make(eval(client_pub_key_data))
+      client_pub_key = SimplifiedECC(eval(client_pub_key_data))
       
       #Step 2: Generate session key
-      session_key = self.rng.randint(1, 2**128-1)
+      session_key = self.rng(1, 2**128-1)
       session_key_bytes = session_key.to_bytes(16, 'big')
       
       #Step 3: Encrypt session key with client's public key
